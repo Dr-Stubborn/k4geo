@@ -398,18 +398,25 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   // at inner radius: distance projected at plane perpendicular to readout plane
   double activeInThickness = Rmin * sin(dPhi / 2.) * cos(angle);
   activeInThickness -= passiveThickness * (0.5 - activePassiveOverlap);
-  // at outer radius: distance projected at plane perpendicular to readout plane
-  double activeOutThickness = (Rmin + planeLength) * sin(dPhi / 2.) * cos(angle);
-  // make correction for outer readius caused by inclination angle
-  // first calculate intersection of readout plane and plane parallel to shifted passive plane
-  double xIntersect = (Rmin * (tan(angle) - cos(dPhi / 2.) * tan(angle + dPhi / 2.)) - planeLength * sin(dPhi / 2.)) /
-                      (tan(angle) - tan(angle + dPhi / 2.));
-  double yIntersect = tan(angle) * xIntersect + Rmin * (sin(dPhi / 2.) - tan(angle)) + planeLength * sin(dPhi / 2.);
-  // distance from inner radius to intersection
-  double correction =
-      planeLength - sqrt(pow(xIntersect - Rmin * cos(dPhi / 2), 2) + pow(yIntersect - Rmin * sin(dPhi / 2), 2));
-  // correction to the active thickness
-  activeOutThickness += 2. * correction * sin(dPhi / 4.);
+
+  // Calculate the position of the outer edge of the passive element
+  // xPassiveOuter: x-coordinate of the outer passive element at angular position dPhi/2
+  // This accounts for the radial distance (Rmin) and the inclined plane contribution
+  double xPassiveOuter = Rmin * cos(dPhi/2.) + planeLength * cos(angle + dPhi/2.);
+  
+  // yPassiveOuter: y-coordinate of the outer passive element at angular position dPhi/2
+  double yPassiveOuter = Rmin * sin(dPhi/2.) + planeLength * sin(angle + dPhi/2.);
+  
+  // Calculate the thickness of the active (LAr/LKr) layer at the outer radius
+  // Project the distance from inner radius to outer passive position onto the normal direction
+  // The normal direction is perpendicular to the readout plane (inclined by angle)
+  // - (xPassiveOuter - Rmin) * (-sin(angle)): contribution from x-coordinate projection
+  // - yPassiveOuter * cos(angle): contribution from y-coordinate projection
+  double activeOutThickness = (xPassiveOuter - Rmin) * (-sin(angle)) + yPassiveOuter * cos(angle);
+  
+  // Subtract the overlapping region between active and passive materials
+  // activePassiveOverlap is the fractional overlap (0 to 0.5 of passive thickness)
+  // (0.5 - activePassiveOverlap): accounts for symmetric overlap on both sides
   activeOutThickness -= passiveThickness * (0.5 - activePassiveOverlap);
   // print the active layer dimensions
   double activeInThicknessAfterSubtraction =
