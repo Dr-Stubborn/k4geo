@@ -162,7 +162,7 @@
 	  <layer thickness="5.73371*cm" repeat="1"/>
 	  <layer thickness="5.94607*cm" repeat="1"/>
 	  <layer thickness="6.15843*cm" repeat="1"/>
-	  <layer thickness="6.39909*cm" repeat="1"/>
+	  <layer thickness="6.39909*cm" repeat="1"/>  <!-- changed from 6.39910 * cm to avoid ~ 49nm overlap-->
         </layers>
       </calorimeter>
     </detector>
