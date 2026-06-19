@@ -111,7 +111,12 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   double passiveInnerThicknessMax = passiveInnerMax.thickness();
   double passiveOuterThickness = passiveOuter.thickness();
   double passiveGlueThickness = passiveGlue.thickness();
-  double passiveThickness = passiveInnerThicknessMin + passiveOuterThickness + passiveGlueThickness;
+  bool hasPassiveOuter = passiveOuterThickness > 0.;
+  bool hasPassiveGlue = passiveGlueThickness > 0.;
+  double effectivePassiveOuterThickness = hasPassiveOuter ? passiveOuterThickness : 0.;
+  double effectivePassiveGlueThickness = hasPassiveGlue ? passiveGlueThickness : 0.;
+  double passiveThickness =
+      passiveInnerThicknessMin + effectivePassiveOuterThickness + effectivePassiveGlueThickness;
   // inclination angle
   double angle = passive.rotation().angle();
 
@@ -272,11 +277,19 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
                    "   thickness of inner part at outer radius (cm) = ", passiveInnerThicknessMax / dd4hep::cm);
   dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
-                   "   thickness of outer part (cm) = %f", passiveOuterThickness / dd4hep::cm);
+                   "   thickness of outer part (cm) = %f", effectivePassiveOuterThickness / dd4hep::cm);
   dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
-                   "   thickness of middle part (cm) = %f", passiveGlueThickness / dd4hep::cm);
+                   "   thickness of middle part (cm) = %f", effectivePassiveGlueThickness / dd4hep::cm);
   dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
                    "   total thickness of absorber at inner radius (cm) = %f", passiveThickness / dd4hep::cm);
+  if (!hasPassiveOuter) {
+    dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
+                     "   outer absorber part disabled because thickness <= 0");
+  }
+  if (!hasPassiveGlue) {
+    dd4hep::printout(dd4hep::INFO, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
+                     "   glue absorber part disabled because thickness <= 0");
+  }
 
   //////////////////////////////
   // ELECTRODES
@@ -393,8 +406,8 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   // if parallel absorbers are used then passiveAngle = 0 and cosPassiveAngle = 1
   double passiveAngle = atan2((passiveInnerThicknessMax - passiveInnerThicknessMin) / 2., planeLength);
   double cosPassiveAngle = cos(passiveAngle);
-  double rotatedOuterThickness = passiveOuterThickness / cosPassiveAngle;
-  double rotatedGlueThickness = passiveGlueThickness / cosPassiveAngle;
+  double rotatedOuterThickness = effectivePassiveOuterThickness / cosPassiveAngle;
+  double rotatedGlueThickness = effectivePassiveGlueThickness / cosPassiveAngle;
 
   // Distance from the center of the electrode to the center of the 1st layer, in the electrode direction
   double layerFirstOffset = -planeLength / 2. + layerHeight[0] / 2.;
@@ -468,8 +481,6 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
                                            caloDim.dz(), layerHeight[0] / 2.);
   dd4hep::Trd1 passiveInnerShape(passiveInnerThicknessLayer[1] / 2., passiveInnerThicknessMax / 2., caloDim.dz(),
                                  planeLength / 2. - layerHeight[0] / 2.);
-  dd4hep::Box passiveOuterShape(passiveOuterThickness / 4., caloDim.dz(), planeLength / 2. / cosPassiveAngle);
-  dd4hep::Box passiveGlueShape(passiveGlueThickness / 4., caloDim.dz(), planeLength / 2. / cosPassiveAngle);
   dd4hep::Volume passiveVol("passive", passiveShape, aLcdd.material("Air"));
   passiveVol.setVisAttributes(aLcdd, "absorbers");
   dd4hep::Volume passiveInnerVol(passiveInnerMaterial + "_passive", passiveInnerShape,
@@ -478,12 +489,6 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   dd4hep::Volume passiveInnerVolFirstLayer(passiveInnerMaterialFirstLayer + "_passive", passiveInnerShapeFirstLayer,
                                            aLcdd.material(passiveInnerMaterialFirstLayer));
   passiveInnerVolFirstLayer.setVisAttributes(aLcdd, "absorbers");
-  dd4hep::Volume passiveOuterVol(passiveOuterMaterial + "_passive", passiveOuterShape,
-                                 aLcdd.material(passiveOuterMaterial));
-  passiveOuterVol.setVisAttributes(aLcdd, "absorbers");
-  dd4hep::Volume passiveGlueVol(passiveGlueMaterial + "_passive", passiveGlueShape,
-                                aLcdd.material(passiveGlueMaterial));
-  passiveGlueVol.setVisAttributes(aLcdd, "absorbers");
 
   // translate and rotate the elements of the module appropriately
   // the Pb absorber does not need to be rotated, but the glue and
@@ -499,37 +504,100 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
   //   its center is shifted wrt center of full absorber by -(length of plane - length of 1st layer)/2.0
   dd4hep::PlacedVolume passiveInnerPhysVolFirstLayer =
       passiveVol.placeVolume(passiveInnerVolFirstLayer, dd4hep::Position(0, 0, layerFirstOffset));
-  // - outer part of absorber, all layers, left side
-  dd4hep::PlacedVolume passiveOuterPhysVolBelow = passiveVol.placeVolume(
-      passiveOuterVol,
-      dd4hep::Transform3D(dd4hep::RotationY(-passiveAngle),
-                          dd4hep::Position(-(passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. -
-                                               rotatedGlueThickness / 2. - rotatedOuterThickness / 4.,
-                                           0, 0)));
-  // - outer part of absorber, all layers, right side
-  dd4hep::PlacedVolume passiveOuterPhysVolAbove = passiveVol.placeVolume(
-      passiveOuterVol, dd4hep::Transform3D(dd4hep::RotationY(passiveAngle),
-                                           dd4hep::Position((passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. +
-                                                                rotatedGlueThickness / 2. + rotatedOuterThickness / 4.,
-                                                            0, 0)));
-  // - glue in absorber, all layers, left side
-  dd4hep::PlacedVolume passiveGluePhysVolBelow = passiveVol.placeVolume(
-      passiveGlueVol, dd4hep::Transform3D(dd4hep::RotationY(-passiveAngle),
-                                          dd4hep::Position(-(passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. -
-                                                               rotatedGlueThickness / 4.,
-                                                           0, 0)));
-  // - glue in absorber, all layers, right side
-  dd4hep::PlacedVolume passiveGluePhysVolAbove = passiveVol.placeVolume(
-      passiveGlueVol, dd4hep::Transform3D(dd4hep::RotationY(passiveAngle),
-                                          dd4hep::Position((passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. +
-                                                               rotatedGlueThickness / 4.,
-                                                           0, 0)));
   passiveInnerPhysVol.addPhysVolID("subtype", 0);
   passiveInnerPhysVolFirstLayer.addPhysVolID("subtype", 0);
-  passiveOuterPhysVolBelow.addPhysVolID("subtype", 1);
-  passiveOuterPhysVolAbove.addPhysVolID("subtype", 2);
-  passiveGluePhysVolBelow.addPhysVolID("subtype", 3);
-  passiveGluePhysVolAbove.addPhysVolID("subtype", 4);
+
+  if (hasPassiveOuter) {
+    dd4hep::Box passiveOuterShape(effectivePassiveOuterThickness / 4., caloDim.dz(),
+                                  planeLength / 2. / cosPassiveAngle);
+    dd4hep::Volume passiveOuterVol(passiveOuterMaterial + "_passive", passiveOuterShape,
+                                   aLcdd.material(passiveOuterMaterial));
+    passiveOuterVol.setVisAttributes(aLcdd, "absorbers");
+    // - outer part of absorber, all layers, left side
+    dd4hep::PlacedVolume passiveOuterPhysVolBelow = passiveVol.placeVolume(
+        passiveOuterVol,
+        dd4hep::Transform3D(dd4hep::RotationY(-passiveAngle),
+                            dd4hep::Position(-(passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. -
+                                                 rotatedGlueThickness / 2. - rotatedOuterThickness / 4.,
+                                             0, 0)));
+    // - outer part of absorber, all layers, right side
+    dd4hep::PlacedVolume passiveOuterPhysVolAbove = passiveVol.placeVolume(
+        passiveOuterVol,
+        dd4hep::Transform3D(dd4hep::RotationY(passiveAngle),
+                            dd4hep::Position((passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. +
+                                                 rotatedGlueThickness / 2. + rotatedOuterThickness / 4.,
+                                             0, 0)));
+    passiveOuterPhysVolBelow.addPhysVolID("subtype", 1);
+    passiveOuterPhysVolAbove.addPhysVolID("subtype", 2);
+
+    if (passiveOuter.isSensitive()) {
+      // if the outer part of the absorber is sensitive (to study energy deposited in it, for calculation of per-layer
+      // sampling fraction), then it is divided in layer volumes, and each layer volume is set as sensitive
+      dd4hep::printout(dd4hep::DEBUG, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
+                       "Passive outer volume set as sensitive");
+      double layerOffset = layerFirstOffset / cosPassiveAngle;
+      for (uint iLayer = 0; iLayer < numLayers; iLayer++) {
+        dd4hep::Box layerPassiveOuterShape(effectivePassiveOuterThickness / 4., caloDim.dz(),
+                                           layerHeight[iLayer] / 2. / cosPassiveAngle);
+        dd4hep::Volume layerPassiveOuterVol(passiveOuterMaterial, layerPassiveOuterShape,
+                                            aLcdd.material(passiveOuterMaterial));
+        layerPassiveOuterVol.setSensitiveDetector(aSensDet);
+        dd4hep::PlacedVolume layerPassiveOuterPhysVol =
+            passiveOuterVol.placeVolume(layerPassiveOuterVol, dd4hep::Position(0, 0, layerOffset));
+        layerPassiveOuterPhysVol.addPhysVolID("layer", iLayer);
+        dd4hep::DetElement layerPassiveOuterDetElem("layer", iLayer);
+        layerPassiveOuterDetElem.setPlacement(layerPassiveOuterPhysVol);
+        if (iLayer != numLayers - 1) {
+          layerOffset += (layerHeight[iLayer] / 2. + layerHeight[iLayer + 1] / 2.) / cosPassiveAngle;
+        }
+      }
+    }
+  }
+
+  if (hasPassiveGlue) {
+    dd4hep::Box passiveGlueShape(effectivePassiveGlueThickness / 4., caloDim.dz(),
+                                 planeLength / 2. / cosPassiveAngle);
+    dd4hep::Volume passiveGlueVol(passiveGlueMaterial + "_passive", passiveGlueShape,
+                                  aLcdd.material(passiveGlueMaterial));
+    passiveGlueVol.setVisAttributes(aLcdd, "absorbers");
+    // - glue in absorber, all layers, left side
+    dd4hep::PlacedVolume passiveGluePhysVolBelow = passiveVol.placeVolume(
+        passiveGlueVol, dd4hep::Transform3D(dd4hep::RotationY(-passiveAngle),
+                                            dd4hep::Position(-(passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. -
+                                                                 rotatedGlueThickness / 4.,
+                                                             0, 0)));
+    // - glue in absorber, all layers, right side
+    dd4hep::PlacedVolume passiveGluePhysVolAbove = passiveVol.placeVolume(
+        passiveGlueVol, dd4hep::Transform3D(dd4hep::RotationY(passiveAngle),
+                                            dd4hep::Position((passiveInnerThicknessMin + passiveInnerThicknessMax) / 4. +
+                                                                 rotatedGlueThickness / 4.,
+                                                             0, 0)));
+    passiveGluePhysVolBelow.addPhysVolID("subtype", 3);
+    passiveGluePhysVolAbove.addPhysVolID("subtype", 4);
+
+    if (passiveGlue.isSensitive()) {
+      // if the glue is sensitive (to study energy deposited in it, for calculation of per-layer
+      // sampling fraction), then it is divided in layer volumes, and each layer volume is set as sensitive
+      dd4hep::printout(dd4hep::DEBUG, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
+                       "Passive glue volume set as sensitive");
+      double layerOffset = layerFirstOffset / cosPassiveAngle;
+      for (uint iLayer = 0; iLayer < numLayers; iLayer++) {
+        dd4hep::Box layerPassiveGlueShape(effectivePassiveGlueThickness / 4., caloDim.dz(),
+                                          layerHeight[iLayer] / 2. / cosPassiveAngle);
+        dd4hep::Volume layerPassiveGlueVol(passiveGlueMaterial, layerPassiveGlueShape,
+                                           aLcdd.material(passiveGlueMaterial));
+        layerPassiveGlueVol.setSensitiveDetector(aSensDet);
+        dd4hep::PlacedVolume layerPassiveGluePhysVol =
+            passiveGlueVol.placeVolume(layerPassiveGlueVol, dd4hep::Position(0, 0, layerOffset));
+        layerPassiveGluePhysVol.addPhysVolID("layer", iLayer);
+        dd4hep::DetElement layerPassiveGlueDetElem("layer", iLayer);
+        layerPassiveGlueDetElem.setPlacement(layerPassiveGluePhysVol);
+        if (iLayer != numLayers - 1) {
+          layerOffset += (layerHeight[iLayer] / 2. + layerHeight[iLayer + 1] / 2.) / cosPassiveAngle;
+        }
+      }
+    }
+  }
 
   // if the inner part of the absorber is sensitive (to study energy deposited in it, for calculation of per-layer
   // sampling fraction), then it is divided in layer volumes, and each layer volume is set as sensitive
@@ -561,52 +629,6 @@ static dd4hep::detail::Ref_t createECalBarrelInclined(dd4hep::Detector& aLcdd, d
       layerPassiveInnerDetElem.setPlacement(layerPassiveInnerPhysVol);
       if (iLayer != numLayers - 1) {
         layerOffset += layerHeight[iLayer] / 2. + layerHeight[iLayer + 1] / 2.;
-      }
-    }
-  }
-
-  if (passiveOuter.isSensitive()) {
-    // if the outer part of the absorber is sensitive (to study energy deposited in it, for calculation of per-layer
-    // sampling fraction), then it is divided in layer volumes, and each layer volume is set as sensitive
-    dd4hep::printout(dd4hep::DEBUG, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
-                     "Passive outer volume set as sensitive");
-    double layerOffset = layerFirstOffset / cosPassiveAngle;
-    for (uint iLayer = 0; iLayer < numLayers; iLayer++) {
-      dd4hep::Box layerPassiveOuterShape(passiveOuterThickness / 4., caloDim.dz(),
-                                         layerHeight[iLayer] / 2. / cosPassiveAngle);
-      dd4hep::Volume layerPassiveOuterVol(passiveOuterMaterial, layerPassiveOuterShape,
-                                          aLcdd.material(passiveOuterMaterial));
-      layerPassiveOuterVol.setSensitiveDetector(aSensDet);
-      dd4hep::PlacedVolume layerPassiveOuterPhysVol =
-          passiveOuterVol.placeVolume(layerPassiveOuterVol, dd4hep::Position(0, 0, layerOffset));
-      layerPassiveOuterPhysVol.addPhysVolID("layer", iLayer);
-      dd4hep::DetElement layerPassiveOuterDetElem("layer", iLayer);
-      layerPassiveOuterDetElem.setPlacement(layerPassiveOuterPhysVol);
-      if (iLayer != numLayers - 1) {
-        layerOffset += (layerHeight[iLayer] / 2. + layerHeight[iLayer + 1] / 2.) / cosPassiveAngle;
-      }
-    }
-  }
-
-  if (passiveGlue.isSensitive()) {
-    // if the glue is sensitive (to study energy deposited in it, for calculation of per-layer
-    // sampling fraction), then it is divided in layer volumes, and each layer volume is set as sensitive
-    dd4hep::printout(dd4hep::DEBUG, "ECalBarrel_NobleLiquid_InclinedTrapezoids_o1_v03",
-                     "Passive glue volume set as sensitive");
-    double layerOffset = layerFirstOffset / cosPassiveAngle;
-    for (uint iLayer = 0; iLayer < numLayers; iLayer++) {
-      dd4hep::Box layerPassiveGlueShape(passiveGlueThickness / 4., caloDim.dz(),
-                                        layerHeight[iLayer] / 2. / cosPassiveAngle);
-      dd4hep::Volume layerPassiveGlueVol(passiveGlueMaterial, layerPassiveGlueShape,
-                                         aLcdd.material(passiveGlueMaterial));
-      layerPassiveGlueVol.setSensitiveDetector(aSensDet);
-      dd4hep::PlacedVolume layerPassiveGluePhysVol =
-          passiveGlueVol.placeVolume(layerPassiveGlueVol, dd4hep::Position(0, 0, layerOffset));
-      layerPassiveGluePhysVol.addPhysVolID("layer", iLayer);
-      dd4hep::DetElement layerPassiveGlueDetElem("layer", iLayer);
-      layerPassiveGlueDetElem.setPlacement(layerPassiveGluePhysVol);
-      if (iLayer != numLayers - 1) {
-        layerOffset += (layerHeight[iLayer] / 2. + layerHeight[iLayer + 1] / 2.) / cosPassiveAngle;
       }
     }
   }
